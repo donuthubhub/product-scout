@@ -199,7 +199,11 @@ export default function App() {
     const newMeta = m ? {...defaultMeta(),...m} : defaultMeta();
     const newNoms = {};
     MEMBERS.forEach((name,i)=>{ newNoms[name]=noms[i]?noms[i].map(migrateProduct):[emptyProduct(),emptyProduct(),emptyProduct()]; });
-    setMeta(newMeta); setNominations(newNoms); setSynced(true); setLastSaved(new Date().toISOString());
+
+    // Restore images from localStorage (images not stored in GAS due to size limits)
+    MEMBERS.forEach(name=>{
+      try{const imgs=localStorage.getItem('images_'+name);if(imgs){const imgData=JSON.parse(imgs);newNoms[name]=newNoms[name].map((p,i)=>({...p,images:imgData[i]||[]}));}}catch(e){}
+    });    setMeta(newMeta); setNominations(newNoms); setSynced(true); setLastSaved(new Date().toISOString());
     return {meta:newMeta,nominations:newNoms};
   },[]);
 
@@ -220,13 +224,17 @@ export default function App() {
     if(loginName==="Admin"){setScreen("admin");return;}
     const ex=nominations[loginName];
     if(ex) setLocalProds(ex.map(migrateProduct));
-    setLocalVotes(meta?.votes?.[loginName]||{});
+
+      try{const imgs=localStorage.getItem('images_'+loginName);if(imgs){const imgData=JSON.parse(imgs);setLocalProds(prev=>prev.map((p,i)=>({...p,images:imgData[i]||[]})));}}catch(e){}    setLocalVotes(meta?.votes?.[loginName]||{});
     setScreen("rules");
   };
 
   const doSave=async()=>{
     setSaveMsg("saving");
-    const ok=await dbSet(`nom_${user}`,localProds);
+    // Strip images before saving to GAS (too large), save to localStorage instead
+    const prodsNoImg=localProds.map(p=>({...p,images:[]}));
+    try{localStorage.setItem('images_'+user,JSON.stringify(localProds.map(p=>p.images||[])));}catch(e){}
+    const ok=await dbSet(`nom_${user}`,prodsNoImg);
     setNominations(prev=>({...prev,[user]:localProds}));
     setSaveMsg(ok?"ok":"err");
     if(ok) setSynced(true);
