@@ -26,7 +26,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function gasGet() {
   for (let i = 0; i < MAX_RETRIES; i++) {
     try {
-      const res = await fetch(`${GAS_URL}?key=${DB_KEY}`);
+      const res = await fetch(`${GAS_URL}?key=${DB_KEY}`, { redirect: "follow" });
       const json = await res.json();
       if (json.ok && json.value) return JSON.parse(json.value);
       return null;
@@ -36,13 +36,11 @@ async function gasGet() {
 
 async function gasSet(data) {
   const payload = { ...data, lastUpdated: new Date().toISOString() };
+  const encoded = encodeURIComponent(JSON.stringify(payload));
   for (let i = 0; i < MAX_RETRIES; i++) {
     try {
-      const res = await fetch(GAS_URL, {
-        method: "POST",
-        body: JSON.stringify({ key: DB_KEY, value: JSON.stringify(payload) }),
-        headers: { "Content-Type": "text/plain" }
-      });
+      // Use no-cors GET with data in URL param to avoid CORS preflight
+      const res = await fetch(`${GAS_URL}?action=set&key=${DB_KEY}&value=${encoded}`, { redirect: "follow" });
       const json = await res.json();
       return json.ok ? { ok: true, ts: payload.lastUpdated } : { ok: false };
     } catch { if (i === MAX_RETRIES - 1) return { ok: false }; await sleep(600 * (i + 1)); }
