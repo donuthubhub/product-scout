@@ -59,18 +59,35 @@ function migrateProduct(p) {
 
 // Compress image to base64, max 800px, quality 0.7
 function compressImage(file) {
+  // Compress + guarantee the serialized image stays under the backend POST limit (~48KB).
+  const BUDGET = 44000; // bytes for JSON.stringify({type,data})
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = e => {
       const img = new Image();
       img.onload = () => {
-        const MAX = 700;
-        let { width: w, height: h } = img;
-        if (w > MAX || h > MAX) { if(w>h){ h=Math.round(h*MAX/w); w=MAX; } else { w=Math.round(w*MAX/h); h=MAX; } }
-        const canvas = document.createElement("canvas");
-        canvas.width=w; canvas.height=h;
-        canvas.getContext("2d").drawImage(img,0,0,w,h);
-        resolve({ type:"base64", data:canvas.toDataURL("image/jpeg",0.62) });
+        const tries = [
+          { max: 700, q: 0.62 },
+          { max: 640, q: 0.55 },
+          { max: 560, q: 0.50 },
+          { max: 480, q: 0.45 },
+          { max: 420, q: 0.40 },
+          { max: 360, q: 0.38 },
+          { max: 300, q: 0.35 },
+        ];
+        let result = null;
+        for (let i = 0; i < tries.length; i++) {
+          const MAX = tries[i].max;
+          let { width: w, height: h } = img;
+          if (w > MAX || h > MAX) { if(w>h){ h=Math.round(h*MAX/w); w=MAX; } else { w=Math.round(w*MAX/h); h=MAX; } }
+          const canvas = document.createElement("canvas");
+          canvas.width=w; canvas.height=h;
+          canvas.getContext("2d").drawImage(img,0,0,w,h);
+          const candidate = { type:"base64", data:canvas.toDataURL("image/jpeg",tries[i].q) };
+          result = candidate;
+          if (JSON.stringify(candidate).length < BUDGET) break;
+        }
+        resolve(result);
       };
       img.src = e.target.result;
     };
@@ -217,7 +234,16 @@ export default function App() {
   useEffect(()=>{ loadAll().then(()=>setReady(true)); },[]);
   useEffect(()=>{
     if(!ready) return;
-    timerRef.current=setInterval(()=>{ if(userRef.current&&screenRef.current!=="form") loadAll(); },20000);
+    timerRef.current=setInterval(async ()=>{
+      if(!userRef.current) return;
+      if(screenRef.current!=="form"){ loadAll(); }
+      else {
+        // On the form: only sync the lightweight meta flag so the vote button can appear,
+        // WITHOUT touching localProds (the in-progress form input).
+        const m = await dbGet("meta");
+        if(m) setMeta(prev=>({ ...(prev||defaultMeta()), ...m }));
+      }
+    },20000);
     return()=>clearInterval(timerRef.current);
   },[ready]);
   useEffect(()=>{ screenRef.current=screen; },[screen]);
@@ -445,7 +471,7 @@ function Form({user,meta,localProds,setLocalProds,activeProd,switchTab,doSave,sa
           </Sec>
 
           <Sec title="ลิงก์และอ้างอิง" sub="Links & References">
-            <FR><FW label="🌐 เว็บไซต์สินค้า *" sub="Website" s={2}><input value={p.websiteLink} onChange={e=>upd("websiteLink",e.target.value)} placeholder="https://..." style={inp()} inputMode="url" autoCapitalize="none"/></FW></FR>
+            <FR><FW label="🌐 เว็บไซต์สินค้า" sub="Website" s={2}><input value={p.websiteLink} onChange={e=>upd("websiteLink",e.target.value)} placeholder="https://..." style={inp()} inputMode="url" autoCapitalize="none"/></FW></FR>
             <FR><FW label="🔗 ลิงก์ Affiliate" sub="Affiliate Link" s={2}><input value={p.affiliateLink} onChange={e=>upd("affiliateLink",e.target.value)} placeholder="ลิงก์ affiliate หรือลิงก์ซื้อสินค้า" style={inp()} inputMode="url" autoCapitalize="none"/></FW></FR>
             <FR cols={2}>
               <FW label="🥊 คู่แข่งหลัก"><input value={p.competitor} onChange={e=>upd("competitor",e.target.value)} placeholder="เช่น แบรนด์ X หรือ top seller" style={inp()}/></FW>
