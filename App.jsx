@@ -63,13 +63,13 @@ function compressImage(file) {
     reader.onload = e => {
       const img = new Image();
       img.onload = () => {
-        const MAX = 800;
+        const MAX = 700;
         let { width: w, height: h } = img;
         if (w > MAX || h > MAX) { if(w>h){ h=Math.round(h*MAX/w); w=MAX; } else { w=Math.round(w*MAX/h); h=MAX; } }
         const canvas = document.createElement("canvas");
         canvas.width=w; canvas.height=h;
         canvas.getContext("2d").drawImage(img,0,0,w,h);
-        resolve({ type:"base64", data:canvas.toDataURL("image/jpeg",0.72) });
+        resolve({ type:"base64", data:canvas.toDataURL("image/jpeg",0.62) });
       };
       img.src = e.target.result;
     };
@@ -127,6 +127,7 @@ function ImageUploader({ images, onChange }) {
     for (const file of Array.from(files)) {
       if (newImgs.length >= 3) break;
       if (!file.type.startsWith("image/")) continue;
+      if (file.size > 10*1024*1024) { alert("ไฟล์ "+file.name+" มีขนาดเกิน 10MB กรุณาเลือกรูปที่เล็กกว่านี้"); continue; }
       const compressed = await compressImage(file);
       newImgs.push(compressed);
     }
@@ -199,11 +200,16 @@ export default function App() {
     const newMeta = m ? {...defaultMeta(),...m} : defaultMeta();
     const newNoms = {};
     MEMBERS.forEach((name,i)=>{ newNoms[name]=noms[i]?noms[i].map(migrateProduct):[emptyProduct(),emptyProduct(),emptyProduct()]; });
-
-    // Restore images from localStorage (images not stored in GAS due to size limits)
-    MEMBERS.forEach(name=>{
-      try{const imgs=localStorage.getItem('images_'+name);if(imgs){const imgData=JSON.parse(imgs);newNoms[name]=newNoms[name].map((p,i)=>({...p,images:imgData[i]||[]}));}}catch(e){}
-    });    setMeta(newMeta); setNominations(newNoms); setSynced(true); setLastSaved(new Date().toISOString());
+    await Promise.all(MEMBERS.map(async(name)=>{
+      const prods = newNoms[name];
+      await Promise.all(prods.map(async(p,pi)=>{
+        const n = p.imgCount||0;
+        if(!n){ p.images = p.images||[]; return; }
+        const imgs = await Promise.all(Array.from({length:n},(_,ii)=>dbGet(`img_${name}_${pi}_${ii}`)));
+        p.images = imgs.filter(Boolean);
+      }));
+    }));
+    setMeta(newMeta); setNominations(newNoms); setSynced(true); setLastSaved(new Date().toISOString());
     return {meta:newMeta,nominations:newNoms};
   },[]);
 
@@ -224,20 +230,26 @@ export default function App() {
     if(loginName==="Admin"){setScreen("admin");return;}
     const ex=nominations[loginName];
     if(ex) setLocalProds(ex.map(migrateProduct));
-
-      try{const imgs=localStorage.getItem('images_'+loginName);if(imgs){const imgData=JSON.parse(imgs);setLocalProds(prev=>prev.map((p,i)=>({...p,images:imgData[i]||[]})));}}catch(e){}    setLocalVotes(meta?.votes?.[loginName]||{});
+    setLocalVotes(meta?.votes?.[loginName]||{});
     setScreen("rules");
   };
 
   const doSave=async()=>{
     setSaveMsg("saving");
-    // Strip images before saving to GAS (too large), save to localStorage instead
-    const prodsNoImg=localProds.map(p=>({...p,images:[]}));
-    try{localStorage.setItem('images_'+user,JSON.stringify(localProds.map(p=>p.images||[])));}catch(e){}
-    const ok=await dbSet(`nom_${user}`,prodsNoImg);
+    const prodsMeta = localProds.map(p=>{ const imgs=(p.images||[]).filter(im=>im&&im.data); const {images, ...rest}=p; return {...rest, imgCount: imgs.length}; });
+    let allOk = true;
+    for(let pi=0; pi<localProds.length; pi++){
+      const imgs=(localProds[pi].images||[]).filter(im=>im&&im.data);
+      for(let ii=0; ii<imgs.length; ii++){
+        const okImg = await dbSet(`img_${user}_${pi}_${ii}`, imgs[ii]);
+        if(!okImg) allOk=false;
+      }
+    }
+    const ok = await dbSet(`nom_${user}`, prodsMeta);
+    if(!ok) allOk=false;
     setNominations(prev=>({...prev,[user]:localProds}));
-    setSaveMsg(ok?"ok":"err");
-    if(ok) setSynced(true);
+    setSaveMsg(allOk?"ok":"err");
+    if(allOk) setSynced(true);
   };
 
   // 1 vote per product toggle
@@ -427,7 +439,7 @@ function Form({user,meta,localProds,setLocalProds,activeProd,switchTab,doSave,sa
             </FR>
           </Sec>
 
-          <Sec title="รูปภาพสินค้า" sub="อัปโหลดได้สูงสุด 3 รูป · ระบบจะย่อขนาดอัตโนมัติ">
+          <Sec title="รูปภาพสินค้า" sub="อัปโหลดได้สูงสุด 3 รูป · ไฟล์ละไม่เกิน 10MB · ระบบจะย่อขนาดอัตโนมัติ (แนะนำ JPG/PNG)">
             <ImageUploader images={p.images||[]} onChange={imgs=>upd("images",imgs)}/>
           </Sec>
 
