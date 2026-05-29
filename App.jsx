@@ -20,6 +20,7 @@ const RULES = [
 const API = "/api/db";
 const RETRY = 3;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const normUrl = (u) => { if(!u) return "#"; const s=String(u).trim(); return /^https?:\/\//i.test(s) ? s : ("https://"+s); };
 
 async function dbGet(key) {
   for (let i=0;i<RETRY;i++) {
@@ -539,6 +540,7 @@ function Admin({meta,nominations,active,completed,allProds,saveMeta,synced,lastS
 function Vote({user,meta,allProds,localVotes,allVotes,doVote,synced,lastSaved,fmtTime,refreshing,manualRefresh,go}) {
   const w=useW();const mob=w<640;
   const [idx,setIdx]=useState(0);
+  const [lightbox,setLightbox]=useState(null);
   const touchStart=useRef(null);
   const total=allProds.length;
   const myVoteCount=Object.keys(localVotes).length;
@@ -565,6 +567,12 @@ function Vote({user,meta,allProds,localVotes,allVotes,doVote,synced,lastSaved,fm
 
   return (
     <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",background:C.bg}} onTouchStart={onTS} onTouchEnd={onTE}>
+      {lightbox && (
+        <div onClick={()=>setLightbox(null)} style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,cursor:"zoom-out"}}>
+          <img src={lightbox} alt="" style={{maxWidth:"95%",maxHeight:"95%",objectFit:"contain",borderRadius:8,boxShadow:"0 8px 40px rgba(0,0,0,0.5)"}}/>
+          <button onClick={(e)=>{e.stopPropagation();setLightbox(null);}} style={{position:"absolute",top:18,right:22,width:40,height:40,borderRadius:20,border:"none",background:"rgba(255,255,255,0.9)",color:"#222",fontSize:22,cursor:"pointer",lineHeight:1}}>×</button>
+        </div>
+      )}
       <div style={{background:C.card,borderBottom:`1px solid ${C.border}`,padding:`0 ${mob?"16px":"26px"}`,height:56,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:20,gap:8,flexShrink:0}}>
         <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
           <Logo size={mob?13:14}/>
@@ -601,7 +609,7 @@ function Vote({user,meta,allProds,localVotes,allVotes,doVote,synced,lastSaved,fm
             <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:mob?"wrap":"nowrap"}}>
               {images.map((im,i)=>(
                 <div key={i} style={{flex:i===0?"0 0 auto":undefined,width:i===0?(mob?"100%":260):undefined,height:mob&&i===0?220:180,background:C.soft,borderRadius:12,border:`1px solid ${C.border}`,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                  <img src={im.data} alt="" style={{width:"100%",height:"100%",objectFit:"contain",padding:8}}/>
+                  <img src={im.data} alt="" onClick={()=>setLightbox(im.data)} style={{width:"100%",height:"100%",objectFit:"contain",padding:8,cursor:"zoom-in"}}/>
                 </div>
               ))}
             </div>
@@ -634,8 +642,8 @@ function Vote({user,meta,allProds,localVotes,allVotes,doVote,synced,lastSaved,fm
 
           {(p.websiteLink||p.affiliateLink)&&(
             <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:20}}>
-              {p.websiteLink&&<a href={p.websiteLink} target="_blank" rel="noreferrer" style={{padding:"10px 18px",borderRadius:8,background:C.soft,border:`1.5px solid ${C.border}`,color:C.dark,textDecoration:"none",fontSize:13,fontWeight:500,display:"flex",alignItems:"center",gap:6}}>🌐 Website</a>}
-              {p.affiliateLink&&<a href={p.affiliateLink} target="_blank" rel="noreferrer" style={{padding:"10px 18px",borderRadius:8,background:C.rgL,border:`1.5px solid ${C.rgM}`,color:C.rg,textDecoration:"none",fontSize:13,fontWeight:500,display:"flex",alignItems:"center",gap:6}}>🔗 Affiliate</a>}
+              {p.websiteLink&&<a href={normUrl(p.websiteLink)} target="_blank" rel="noreferrer" style={{padding:"10px 18px",borderRadius:8,background:C.soft,border:`1.5px solid ${C.border}`,color:C.dark,textDecoration:"none",fontSize:13,fontWeight:500,display:"flex",alignItems:"center",gap:6}}>🌐 Website</a>}
+              {p.affiliateLink&&<a href={normUrl(p.affiliateLink)} target="_blank" rel="noreferrer" style={{padding:"10px 18px",borderRadius:8,background:C.rgL,border:`1.5px solid ${C.rgM}`,color:C.rg,textDecoration:"none",fontSize:13,fontWeight:500,display:"flex",alignItems:"center",gap:6}}>🔗 Affiliate</a>}
             </div>
           )}
 
